@@ -58,3 +58,7 @@ Codex compresse ses anciennes sessions en `.jsonl.zst`, que ccusage ne lit pas. 
 
 - ccusage donne un coût par modèle, pas par type de token. La répartition « Coût par type » et l'« Économie du cache » sont estimées avec des ratios de prix par fournisseur (`server/src/usage.ts`).
 - Les sessions servent seulement à compter l'activité ; une session est comptée sur chaque période où elle a été active.
+
+## Licence
+
+[MIT](LICENSE)
