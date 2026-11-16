@@ -5,6 +5,8 @@ Dashboard local de consommation de tokens IA (Claude Code, Codex, OpenCode…), 
 - `server/` : Node + TypeScript (Hono, SQLite via `node:sqlite`). Lance ccusage, stocke les résultats et sert l'API.
 - `web/` : React 19 + Vite, composants [Lenso UI](https://ui.lenso.dev/) (sur [UI SDK](https://ui-sdk.dev/)), graphique Recharts.
 
+L'interface est disponible en français, anglais et chinois : la langue du navigateur est détectée (anglais par défaut), et un menu en bas de page permet d'en changer. Les textes sont dans `web/src/i18n.tsx`.
+
 ## Prérequis
 
 - Node.js 22.13 ou plus récent (pour `node:sqlite`) et pnpm

@@ -1,26 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, SegmentedControl, Skeleton, Tooltip } from "@lenso/ui";
-import { Select } from "@lenso/ui/select";
 import { fetchUsage, triggerSync, type UsageResponse } from "./api";
 import { agentColor } from "./agents";
 import { DailyChart, type Metric } from "./components/DailyChart";
 import { StackBar, type Segment } from "./components/StackBar";
 import { Breakdown } from "./components/Breakdown";
-import { addDays, ago, integer, localDate, money, percent, tokens } from "./format";
+import { Dropdown } from "./components/Dropdown";
+import { addDays, localDate, secondsSince } from "./format";
+import { LANGUAGES, useI18n } from "./i18n";
+
+const REPO_URL = "https://github.com/theflowp/tokenmaxxing";
 
 type Range = "7" | "30" | "90" | "all";
-
-const RANGES = [
-  { value: "7", label: "7 jours" },
-  { value: "30", label: "30 jours" },
-  { value: "90", label: "90 jours" },
-  { value: "all", label: "Tout" },
-] as const;
-
-const METRICS = [
-  { value: "cost", label: "Coût" },
-  { value: "tokens", label: "Tokens" },
-] as const;
 
 function usePersisted<T extends string>(key: string, initial: T): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(() => {
@@ -60,6 +51,7 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
 }
 
 export function App() {
+  const { t, f, lang, setLang } = useI18n();
   const [range, setRange] = usePersisted<Range>("tm.range", "30");
   const [metric, setMetric] = usePersisted<Metric>("tm.metric", "cost");
   const [agent, setAgent] = usePersisted<string>("tm.agent", "all");
@@ -89,8 +81,8 @@ export function App() {
   const serverSyncing = data?.sync.running ?? false;
   useEffect(() => {
     if (!serverSyncing) return;
-    const t = setTimeout(() => setReloadKey((k) => k + 1), 2000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setReloadKey((k) => k + 1), 2000);
+    return () => clearTimeout(timer);
   }, [serverSyncing, data]);
 
   const onSync = async () => {
@@ -106,15 +98,41 @@ export function App() {
     }
   };
 
+  const ranges = useMemo(
+    () => [
+      { value: "7" as const, label: t.days(7) },
+      { value: "30" as const, label: t.days(30) },
+      { value: "90" as const, label: t.days(90) },
+      { value: "all" as const, label: t.allTime },
+    ],
+    [t],
+  );
+
+  const metrics = useMemo(
+    () => [
+      { value: "cost", label: t.cost },
+      { value: "tokens", label: t.tokens },
+    ],
+    [t],
+  );
+
   const agentItems = useMemo(
     () => [
-      { value: "all", label: "Tous les agents" },
+      { value: "all", label: t.allAgents },
       ...(data?.allAgents ?? []).map((a) => ({ value: a.agent, label: a.label })),
     ],
-    [data?.allAgents],
+    [data?.allAgents, t],
   );
 
   const isSyncing = syncing || serverSyncing;
+  const lastSyncAt = data?.sync.lastSyncAt ?? null;
+  const syncText = isSyncing
+    ? t.syncing
+    : !lastSyncAt
+      ? t.neverSynced
+      : secondsSince(lastSyncAt) < 60
+        ? t.syncedJustNow
+        : t.syncedAgo(f.ago(lastSyncAt));
 
   return (
     <>
@@ -123,38 +141,41 @@ export function App() {
           <div className="crumbs">
             <span className="brand">Tokenmaxxing</span>
             <span className="sep">/</span>
-            <Select items={agentItems} value={agent} onValueChange={(v) => v && setAgent(v)} variant="secondary">
-              <Select.Trigger aria-label="Agent">
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Content>
-                <Select.List>
-                  {agentItems.map((item) => (
-                    <Select.Item key={item.value} value={item.value} label={item.label}>
-                      <Select.ItemText>{item.label}</Select.ItemText>
-                      <Select.ItemIndicator />
-                    </Select.Item>
-                  ))}
-                </Select.List>
-              </Select.Content>
-            </Select>
+            <Dropdown label={t.agent} items={agentItems} value={agent} onChange={setAgent} appearance="title" />
           </div>
           <div className="controls">
+            <Dropdown label={t.period} items={ranges} value={range} onChange={setRange} />
             <SegmentedControl
               size="sm"
-              items={RANGES}
-              value={range}
-              onValueChange={(v) => v && setRange(v as Range)}
-              aria-label="Période"
-            />
-            <SegmentedControl
-              size="sm"
-              items={METRICS}
+              items={metrics}
               value={metric}
               onValueChange={(v) => v && setMetric(v as Metric)}
-              aria-label="Mesure"
+              aria-label={t.metric}
             />
+          </div>
+        </div>
+      </header>
+
+      <main className="page">
+        {error && <div className="banner error">{t.error(error)}</div>}
+        {data?.sync.lastError && <div className="banner error">{t.syncFailed(data.sync.lastError)}</div>}
+
+        {!data ? (
+          <LoadingState />
+        ) : data.totals.tokens === 0 && !data.lastDate ? (
+          <div className="empty">{isSyncing ? t.firstSync : t.noData}</div>
+        ) : (
+          <Dashboard data={data} metric={metric} />
+        )}
+
+        <footer className="foot muted">
+          <div className="foot-row">
+            {data && (
+              <span>
+                {t.localData} · {syncText}
+                {data.firstDate && <> · {t.historySince(f.dateMedium(data.firstDate))}</>}
+              </span>
+            )}
             <Tooltip>
               <Tooltip.Trigger
                 render={
@@ -162,44 +183,23 @@ export function App() {
                     variant="borderless"
                     size="sm"
                     isIconOnly
-                    aria-label="Synchroniser avec ccusage"
+                    aria-label={t.syncAction}
                     onClick={onSync}
                     disabled={isSyncing}
                     icon={<RefreshIcon spinning={isSyncing} />}
                   />
                 }
               />
-              <Tooltip.Content>
-                {isSyncing ? "Synchronisation…" : `Dernière synchro ${ago(data?.sync.lastSyncAt ?? null)}`}
-              </Tooltip.Content>
+              <Tooltip.Content>{isSyncing ? t.syncInProgress : t.syncNow}</Tooltip.Content>
             </Tooltip>
           </div>
-        </div>
-      </header>
-
-      <main className="page">
-        {error && <div className="banner error">Erreur : {error}</div>}
-        {data?.sync.lastError && <div className="banner error">Synchro ccusage en échec : {data.sync.lastError}</div>}
-
-        {!data ? (
-          <LoadingState />
-        ) : data.totals.tokens === 0 && !data.lastDate ? (
-          <div className="empty">
-            {isSyncing
-              ? "Première synchronisation avec ccusage en cours…"
-              : "Aucune donnée. Lance une synchronisation."}
+          <div className="foot-row">
+            <Dropdown label={t.language} items={LANGUAGES} value={lang} onChange={setLang} size="sm" />
+            <span className="sep">·</span>
+            <a className="foot-link" href={REPO_URL} target="_blank" rel="noreferrer">
+              {t.sourceCode}
+            </a>
           </div>
-        ) : (
-          <Dashboard data={data} metric={metric} />
-        )}
-
-        <footer className="foot muted">
-          {data && (
-            <>
-              Données locales via ccusage · synchro {ago(data.sync.lastSyncAt)}
-              {data.firstDate && <> · historique depuis le {data.firstDate.split("-").reverse().join("/")}</>}
-            </>
-          )}
         </footer>
       </main>
     </>
@@ -219,76 +219,50 @@ function LoadingState() {
 }
 
 function Dashboard({ data, metric }: { data: UsageResponse; metric: Metric }) {
-  const t = data.totals;
-  const headline = metric === "cost" ? money(t.cost) : tokens(t.tokens);
+  const { t, f } = useI18n();
+  const totals = data.totals;
+  const value = (cost: number, tokenCount: number) => (metric === "cost" ? f.money(cost) : f.tokens(tokenCount));
 
-  const typeSegments: Segment[] =
+  const byType =
     metric === "cost"
-      ? [
-          {
-            key: "in",
-            label: "Input",
-            value: data.costByType.input,
-            color: "var(--seg-1)",
-            display: money(data.costByType.input),
-          },
-          {
-            key: "cr",
-            label: "Lecture cache",
-            value: data.costByType.cacheRead,
-            color: "var(--seg-2)",
-            display: money(data.costByType.cacheRead),
-          },
-          {
-            key: "cw",
-            label: "Écriture cache",
-            value: data.costByType.cacheWrite,
-            color: "var(--seg-3)",
-            display: money(data.costByType.cacheWrite),
-          },
-          {
-            key: "out",
-            label: "Output",
-            value: data.costByType.output,
-            color: "var(--seg-4)",
-            display: money(data.costByType.output),
-          },
-        ]
-      : [
-          { key: "in", label: "Input", value: t.input, color: "var(--seg-1)", display: tokens(t.input) },
-          {
-            key: "cr",
-            label: "Lecture cache",
-            value: t.cacheRead,
-            color: "var(--seg-2)",
-            display: tokens(t.cacheRead),
-          },
-          {
-            key: "cw",
-            label: "Écriture cache",
-            value: t.cacheWrite,
-            color: "var(--seg-3)",
-            display: tokens(t.cacheWrite),
-          },
-          { key: "out", label: "Output", value: t.output, color: "var(--seg-4)", display: tokens(t.output) },
-        ];
+      ? data.costByType
+      : { input: totals.input, cacheRead: totals.cacheRead, cacheWrite: totals.cacheWrite, output: totals.output };
+  const fmtType = metric === "cost" ? f.money : f.tokens;
+  const typeSegments: Segment[] = [
+    { key: "in", label: t.input, value: byType.input, color: "var(--seg-1)", display: fmtType(byType.input) },
+    {
+      key: "cr",
+      label: t.cacheRead,
+      value: byType.cacheRead,
+      color: "var(--seg-2)",
+      display: fmtType(byType.cacheRead),
+    },
+    {
+      key: "cw",
+      label: t.cacheWrite,
+      value: byType.cacheWrite,
+      color: "var(--seg-3)",
+      display: fmtType(byType.cacheWrite),
+    },
+    { key: "out", label: t.output, value: byType.output, color: "var(--seg-4)", display: fmtType(byType.output) },
+  ];
 
   const agentSegments: Segment[] = data.agents.map((a, i) => ({
     key: a.agent,
     label: a.label,
     value: a[metric],
     color: agentColor(a.agent, i),
-    display: metric === "cost" ? money(a.cost) : tokens(a.tokens),
+    display: value(a.cost, a.tokens),
   }));
 
   return (
     <>
       <div className="grid-top">
         <div className="summary">
-          <div className="headline">{headline}</div>
+          <div className="headline">{value(totals.cost, totals.tokens)}</div>
           <div className="sub muted">
-            {integer(t.sessions)} sessions ·{" "}
-            {metric === "cost" ? "estimation au prix API" : `${money(t.cost)} au prix API`}
+            {t.sessions(f.integer(totals.sessions))} ·{" "}
+            {metric === "cost" ? t.apiEstimate : t.atApiPrice(f.money(totals.cost))}
           </div>
 
           <ul className="agents">
@@ -297,12 +271,13 @@ function Dashboard({ data, metric }: { data: UsageResponse; metric: Metric }) {
                 <div className="agent-line">
                   <span className="dot" style={{ background: agentColor(a.agent, i) }} />
                   <span className="agent-name">{a.label}</span>
-                  <span className="muted small">{integer(a.sessions)} sessions</span>
-                  <span className="agent-value num">{metric === "cost" ? money(a.cost) : tokens(a.tokens)}</span>
+                  <span className="muted small">{t.sessions(f.integer(a.sessions))}</span>
+                  <span className="agent-value num">{value(a.cost, a.tokens)}</span>
                 </div>
                 <div className="muted small agent-meta">
-                  {percent(metric === "cost" ? a.costShare : a.tokenShare)} du {metric === "cost" ? "coût" : "volume"} ·{" "}
-                  {metric === "cost" ? `${tokens(a.tokens)} tokens` : money(a.cost)}
+                  {metric === "cost"
+                    ? `${t.shareOfCost(f.percent(a.costShare))} · ${t.tokenCount(f.tokens(a.tokens))}`
+                    : `${t.shareOfVolume(f.percent(a.tokenShare))} · ${f.money(a.cost)}`}
                 </div>
               </li>
             ))}
@@ -310,35 +285,35 @@ function Dashboard({ data, metric }: { data: UsageResponse; metric: Metric }) {
         </div>
 
         <div className="chart-card">
-          <h3 className="section-title">{metric === "cost" ? "Coût par jour" : "Tokens par jour"}</h3>
+          <h3 className="section-title">{metric === "cost" ? t.costPerDay : t.tokensPerDay}</h3>
           <DailyChart data={data} metric={metric} />
         </div>
       </div>
 
       <section>
-        <h3 className="section-title">Totaux</h3>
+        <h3 className="section-title">{t.totals}</h3>
         <dl className="totals">
           {[
-            ["Tokens traités", tokens(t.tokens)],
-            ["Lecture cache", tokens(t.cacheRead)],
-            ["Écriture cache", tokens(t.cacheWrite)],
-            ["Input hors cache", tokens(t.input)],
-            ["Output", tokens(t.output)],
-            ["Économie du cache", money(t.cacheSavings)],
-          ].map(([label, value]) => (
+            [t.processedTokens, f.tokens(totals.tokens)],
+            [t.cacheRead, f.tokens(totals.cacheRead)],
+            [t.cacheWrite, f.tokens(totals.cacheWrite)],
+            [t.uncachedInput, f.tokens(totals.input)],
+            [t.output, f.tokens(totals.output)],
+            [t.cacheSavings, f.money(totals.cacheSavings)],
+          ].map(([label, v]) => (
             <div key={label}>
               <dt>{label}</dt>
-              <dd>{value}</dd>
+              <dd>{v}</dd>
             </div>
           ))}
         </dl>
       </section>
 
       <div className="grid-2">
-        <StackBar title={metric === "cost" ? "Coût par type (estimé)" : "Tokens par type"} segments={typeSegments} />
+        <StackBar title={metric === "cost" ? t.costByType : t.tokensByType} segments={typeSegments} />
         <StackBar
-          title={metric === "cost" ? "Coût par agent" : "Tokens par agent"}
-          aside={`${integer(t.activeDays)} jours actifs`}
+          title={metric === "cost" ? t.costByAgent : t.tokensByAgent}
+          aside={t.activeDays(f.integer(totals.activeDays))}
           segments={agentSegments}
         />
       </div>

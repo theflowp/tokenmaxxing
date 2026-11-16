@@ -1,7 +1,7 @@
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { UsageResponse } from "../api";
 import { agentColor } from "../agents";
-import { dateLong, dateShort, money, moneyShort, tokens } from "../format";
+import { useI18n } from "../i18n";
 
 export type Metric = "cost" | "tokens";
 
@@ -11,6 +11,7 @@ interface Props {
 }
 
 export function DailyChart({ data, metric }: Props) {
+  const { t, f } = useI18n();
   // Largest agent first so it sits behind the smaller ones.
   const agents = [...data.agents].sort((a, b) => b[metric] - a[metric]);
   const rows = data.daily.map((d) => {
@@ -21,8 +22,8 @@ export function DailyChart({ data, metric }: Props) {
 
   const dates = data.daily.map((d) => d.date);
   const ticks = dates.length > 2 ? [dates[0], dates[Math.floor((dates.length - 1) / 2)], dates.at(-1)!] : dates;
-  const fmt = metric === "cost" ? moneyShort : tokens;
-  const fmtFull = metric === "cost" ? money : tokens;
+  const fmt = metric === "cost" ? f.moneyShort : f.tokens;
+  const fmtFull = metric === "cost" ? f.money : f.tokens;
 
   return (
     <div className="chart">
@@ -32,7 +33,7 @@ export function DailyChart({ data, metric }: Props) {
           <XAxis
             dataKey="date"
             ticks={ticks}
-            tickFormatter={dateShort}
+            tickFormatter={f.dateShort}
             tickLine={false}
             axisLine={false}
             interval={0}
@@ -54,7 +55,7 @@ export function DailyChart({ data, metric }: Props) {
               const total = payload.reduce((s, p) => s + Number(p.value ?? 0), 0);
               return (
                 <div className="chart-tooltip">
-                  <div className="chart-tooltip-date">{dateLong(String(label))}</div>
+                  <div className="chart-tooltip-date">{f.dateLong(String(label))}</div>
                   {[...payload]
                     .sort((a, b) => Number(b.value) - Number(a.value))
                     .map((p) => (
@@ -67,7 +68,7 @@ export function DailyChart({ data, metric }: Props) {
                   {payload.length > 1 && (
                     <div className="chart-tooltip-row total">
                       <span />
-                      <span>Total</span>
+                      <span>{t.total}</span>
                       <span className="num">{fmtFull(total)}</span>
                     </div>
                   )}

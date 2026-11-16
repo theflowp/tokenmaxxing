@@ -281,10 +281,13 @@ body {
 
 /* Breakdown */
 .breakdown-head {
+  /* The Lenso Tabs root is a column aligned to the start: stretch to push the switch right. */
+  align-self: stretch;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  gap: 16px;
+  margin-bottom: 11px; /* + 8px Tabs gap = 19px to the table */
 }
 .breakdown-head .section-title {
   margin: 0;
@@ -339,8 +342,29 @@ body {
 }
 
 .foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   text-align: center;
+}
+.foot-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+.foot-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+.foot-link:hover {
+  color: var(--fg);
+  text-decoration-color: currentColor;
 }
 
 .spin {
