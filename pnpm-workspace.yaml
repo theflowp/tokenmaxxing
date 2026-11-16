@@ -1,0 +1,12 @@
+packages:
+  - server
+  - web
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  - "@lenso/glass@0.2.3"
+  - "@lenso/primitives@0.9.1"
+  - "@lenso/tokens@0.11.3"
+  - "@lenso/ui@0.11.3"
+  - "@ui-sdk/core@0.1.0-beta.3"
+  - "@ui-sdk/react@0.1.0-beta.3"

@@ -1,0 +1,180 @@
+import { useState } from "react";
+import * as stylex from "@stylexjs/stylex";
+import { Table, Tabs } from "@lenso/ui";
+import { Meter, MeterIndicator, MeterTrack } from "@ui-sdk/react/meter";
+import type { UsageResponse } from "../api";
+import { ProviderMark, agentColor, providerColor } from "../agents";
+import { dateLong, money, percent, tokens } from "../format";
+import type { Metric } from "./DailyChart";
+
+const x = stylex.create({
+  table: { width: "100%", fontSize: 13.5 },
+  num: { textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
+  muted: { color: "var(--muted)" },
+  rank: { width: 32, color: "var(--muted)" },
+});
+
+/** Thin share bar under a label, relative to the biggest row. Headless UI SDK meter. */
+function ShareMeter({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
+  return (
+    <Meter value={value} min={0} max={max || 1} className="share-meter" aria-label={label}>
+      <MeterTrack className="share-track">
+        <MeterIndicator className="share-indicator" style={{ background: color }} />
+      </MeterTrack>
+    </Meter>
+  );
+}
+
+function ModelTable({ data, metric }: { data: UsageResponse; metric: Metric }) {
+  const rows = [...data.models].sort((a, b) => b[metric] - a[metric]);
+  const max = rows[0]?.[metric] ?? 0;
+  const shareKey = metric === "cost" ? "costShare" : "tokenShare";
+
+  return (
+    <Table>
+      <Table.ScrollContainer>
+        <Table.Content aria-label="Répartition par modèle" xstyle={x.table}>
+          <Table.Header>
+            <Table.Column columnKey="rank" xstyle={x.rank}>
+              #
+            </Table.Column>
+            <Table.Column columnKey="model">Modèle</Table.Column>
+            <Table.Column columnKey="cost" xstyle={x.num}>
+              Coût
+            </Table.Column>
+            <Table.Column columnKey="share" xstyle={x.num}>
+              Part
+            </Table.Column>
+            <Table.Column columnKey="tokens" xstyle={x.num}>
+              Tokens
+            </Table.Column>
+          </Table.Header>
+          <Table.Body>
+            {rows.map((m, i) => (
+              <Table.Row key={m.model} itemKey={m.model} textValue={m.model}>
+                <Table.Cell columnKey="rank" xstyle={[x.rank, x.muted]}>
+                  {i + 1}
+                </Table.Cell>
+                <Table.Cell columnKey="model">
+                  <div className="model-cell">
+                    <span className="model-name">
+                      <ProviderMark provider={m.provider} />
+                      {m.model}
+                    </span>
+                    <ShareMeter
+                      value={m[metric]}
+                      max={max}
+                      color={providerColor(m.provider)}
+                      label={`Part de ${m.model}`}
+                    />
+                  </div>
+                </Table.Cell>
+                <Table.Cell columnKey="cost" xstyle={x.num}>
+                  {money(m.cost)}
+                </Table.Cell>
+                <Table.Cell columnKey="share" xstyle={[x.num, x.muted]}>
+                  {percent(m[shareKey])}
+                </Table.Cell>
+                <Table.Cell columnKey="tokens" xstyle={[x.num, x.muted]}>
+                  {tokens(m.tokens)}
+                </Table.Cell>
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table.Content>
+      </Table.ScrollContainer>
+    </Table>
+  );
+}
+
+function DayTable({ data, metric }: { data: UsageResponse; metric: Metric }) {
+  const rows = [...data.daily].filter((d) => d.tokens > 0).reverse();
+  const max = Math.max(0, ...rows.map((d) => d[metric]));
+  const total = metric === "cost" ? data.totals.cost : data.totals.tokens;
+  const agents = data.agents;
+
+  return (
+    <Table>
+      <Table.ScrollContainer>
+        <Table.Content aria-label="Répartition par jour" xstyle={x.table}>
+          <Table.Header>
+            <Table.Column columnKey="date">Jour</Table.Column>
+            {agents.length > 1 &&
+              agents.map((a) => (
+                <Table.Column key={a.agent} columnKey={a.agent} xstyle={x.num}>
+                  {a.label}
+                </Table.Column>
+              ))}
+            <Table.Column columnKey="cost" xstyle={x.num}>
+              Coût
+            </Table.Column>
+            <Table.Column columnKey="share" xstyle={x.num}>
+              Part
+            </Table.Column>
+            <Table.Column columnKey="tokens" xstyle={x.num}>
+              Tokens
+            </Table.Column>
+          </Table.Header>
+          <Table.Body>
+            {rows.map((d) => (
+              <Table.Row key={d.date} itemKey={d.date} textValue={d.date}>
+                <Table.Cell columnKey="date">
+                  <div className="model-cell">
+                    <span className="model-name">{dateLong(d.date)}</span>
+                    <ShareMeter value={d[metric]} max={max} color="var(--c-claude)" label={`Part du ${d.date}`} />
+                  </div>
+                </Table.Cell>
+                {agents.length > 1 &&
+                  agents.map((a, i) => (
+                    <Table.Cell key={a.agent} columnKey={a.agent} xstyle={[x.num, x.muted]}>
+                      {d.agents[a.agent]?.tokens ? (
+                        <span className="agent-val">
+                          <span className="dot" style={{ background: agentColor(a.agent, i) }} />
+                          {metric === "cost" ? money(d.agents[a.agent].cost) : tokens(d.agents[a.agent].tokens)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </Table.Cell>
+                  ))}
+                <Table.Cell columnKey="cost" xstyle={x.num}>
+                  {money(d.cost)}
+                </Table.Cell>
+                <Table.Cell columnKey="share" xstyle={[x.num, x.muted]}>
+                  {percent(total ? d[metric] / total : 0)}
+                </Table.Cell>
+                <Table.Cell columnKey="tokens" xstyle={[x.num, x.muted]}>
+                  {tokens(d.tokens)}
+                </Table.Cell>
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table.Content>
+      </Table.ScrollContainer>
+    </Table>
+  );
+}
+
+export function Breakdown({ data, metric }: { data: UsageResponse; metric: Metric }) {
+  const [tab, setTab] = useState<string>("model");
+  return (
+    <section className="breakdown">
+      <Tabs value={tab} onValueChange={(v) => v && setTab(String(v))} size="sm">
+        <div className="breakdown-head">
+          <h3 className="section-title">Détail</h3>
+          <Tabs.List aria-label="Grouper par">
+            <Tabs.Indicator />
+            <Tabs.Tab value="model">Modèle</Tabs.Tab>
+            <Tabs.Tab value="day">Jour</Tabs.Tab>
+          </Tabs.List>
+        </div>
+        <Tabs.Panel value="model">
+          <ModelTable data={data} metric={metric} />
+        </Tabs.Panel>
+        <Tabs.Panel value="day">
+          <DayTable data={data} metric={metric} />
+        </Tabs.Panel>
+      </Tabs>
+    </section>
+  );
+}
