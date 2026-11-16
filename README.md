@@ -1,66 +1,66 @@
 # Tokenmaxxing
 
-Dashboard local de consommation de tokens IA (Claude Code, Codex, OpenCode…), alimenté par [ccusage](https://github.com/ryoppippi/ccusage).
+Local dashboard for your AI token usage (Claude Code, Codex, OpenCode…), powered by [ccusage](https://github.com/ryoppippi/ccusage).
 
-- `server/` : Node + TypeScript (Hono, SQLite via `node:sqlite`). Lance ccusage, stocke les résultats et sert l'API.
-- `web/` : React 19 + Vite, composants [Lenso UI](https://ui.lenso.dev/) (sur [UI SDK](https://ui-sdk.dev/)), graphique Recharts.
+- `server/`: Node + TypeScript (Hono, SQLite via `node:sqlite`). Runs ccusage, stores the results and serves the API.
+- `web/`: React 19 + Vite, [Lenso UI](https://ui.lenso.dev/) components (built on [UI SDK](https://ui-sdk.dev/)), Recharts chart.
 
-L'interface est disponible en français, anglais et chinois : la langue du navigateur est détectée (anglais par défaut), et un menu en bas de page permet d'en changer. Les textes sont dans `web/src/i18n.tsx`.
+The interface is available in French, English and Chinese: the browser language is detected (English by default), and a menu at the bottom of the page switches it. Strings live in `web/src/i18n.tsx`.
 
-## Prérequis
+## Requirements
 
-- Node.js 22.13 ou plus récent (pour `node:sqlite`) et pnpm
-- [ccusage](https://github.com/ryoppippi/ccusage) dans le `PATH` (`npm i -g ccusage`), ou son chemin dans `CCUSAGE_BIN`
-- `zstd`, seulement si tu utilises Codex (voir plus bas)
+- Node.js 22.13 or later (for `node:sqlite`) and pnpm
+- [ccusage](https://github.com/ryoppippi/ccusage) on your `PATH` (`npm i -g ccusage`), or its path in `CCUSAGE_BIN`
+- `zstd`, only if you use Codex (see below)
 
-Tout reste en local : le serveur lit les logs des agents sur ta machine et les stocke dans une base SQLite ignorée par git.
+Everything stays local: the server reads the agents' logs on your machine and stores them in a SQLite database ignored by git.
 
-## Lancer
+## Run
 
 ```bash
 pnpm install
-pnpm dev          # API sur :8787, dashboard sur http://localhost:5173
+pnpm dev          # API on :8787, dashboard on http://localhost:5173
 ```
 
-Production (sert le build du front depuis l'API) :
+Production (the API serves the built frontend):
 
 ```bash
 pnpm build && pnpm start   # http://localhost:8787
 ```
 
-## Synchro incrémentale
+## Incremental sync
 
-Les données sont stockées dans `server/data/usage.db` (SQLite).
+Data is stored in `server/data/usage.db` (SQLite).
 
-- Premier run : `ccusage daily --by-agent --json` et `ccusage session --json` sur tout l'historique.
-- Runs suivants : seulement `--since <dernier jour synchronisé − 1>`. Les jours re-récupérés remplacent ceux en base ; les jours plus anciens ne sont plus jamais recalculés.
-- Déclencheurs : au démarrage du serveur, toutes les 30 min (`SYNC_INTERVAL_MIN`), le bouton ↻ du dashboard, ou `pnpm sync` en CLI.
-- Tout recalculer (ex. après une mise à jour des prix de ccusage) : `pnpm sync --full` ou `POST /api/sync?full=1`.
+- First run: `ccusage daily --by-agent --json` and `ccusage session --json` over the whole history.
+- Later runs: only `--since <last synced day − 1>`. Re-fetched days replace the stored ones; older days are never recomputed.
+- Triggers: on server start, every 30 min (`SYNC_INTERVAL_MIN`), the ↻ button on the dashboard, or `pnpm sync` from the CLI.
+- Rebuild everything (e.g. after ccusage updates its prices): `pnpm sync --full` or `POST /api/sync?full=1`.
 
-### Logs Codex compressés
+### Compressed Codex logs
 
-Codex compresse ses anciennes sessions en `.jsonl.zst`, que ccusage ne lit pas. Avant chaque synchro, le serveur tient à jour un miroir dans `server/data/codex-home` : les `.jsonl` y sont liés, et chaque `.zst` est décompressé une seule fois en ne gardant que les lignes utiles au comptage (environ 30 fois plus petit). ccusage est lancé avec `CODEX_HOME` pointé sur ce miroir. Il faut `zstd` (`brew install zstd` ou `apt install zstd`) ; sans lui, les sessions compressées sont ignorées avec un avertissement.
+Codex compresses older sessions to `.jsonl.zst`, which ccusage does not read. Before each sync, the server keeps a mirror up to date in `server/data/codex-home`: `.jsonl` files are symlinked, and each `.zst` is decompressed once, keeping only the lines needed for counting (about 30x smaller). ccusage runs with `CODEX_HOME` pointing at this mirror. This needs `zstd` (`brew install zstd` or `apt install zstd`); without it, compressed sessions are skipped with a warning.
 
-## Variables d'environnement
+## Environment variables
 
-| Variable            | Défaut                 | Rôle                                       |
-| ------------------- | ---------------------- | ------------------------------------------ |
-| `API_PORT`          | `8787`                 | Port de l'API                              |
-| `SYNC_INTERVAL_MIN` | `30`                   | Intervalle de synchro auto (0 = désactivé) |
-| `CCUSAGE_BIN`       | `ccusage`              | Binaire ccusage à appeler                  |
-| `TOKENMAXXING_DB`   | `server/data/usage.db` | Chemin de la base SQLite                   |
+| Variable            | Default                | Purpose                                 |
+| ------------------- | ---------------------- | --------------------------------------- |
+| `API_PORT`          | `8787`                 | API port                                |
+| `SYNC_INTERVAL_MIN` | `30`                   | Auto-sync interval in minutes (0 = off) |
+| `CCUSAGE_BIN`       | `ccusage`              | ccusage binary to run                   |
+| `TOKENMAXXING_DB`   | `server/data/usage.db` | SQLite database path                    |
 
 ## API
 
-- `GET /api/usage?from=YYYY-MM-DD&to=YYYY-MM-DD&agents=claude,codex` : totaux, répartition par agent, modèle et jour. `from=all` part du premier jour stocké.
-- `POST /api/sync[?full=1]` : lance une synchro (une seule à la fois).
-- `GET /api/status` : état de la dernière synchro et bornes des données.
+- `GET /api/usage?from=YYYY-MM-DD&to=YYYY-MM-DD&agents=claude,codex`: totals and breakdown by agent, model and day. `from=all` starts at the first stored day.
+- `POST /api/sync[?full=1]`: starts a sync (one at a time).
+- `GET /api/status`: last sync status and data bounds.
 
-## Limites
+## Limitations
 
-- ccusage donne un coût par modèle, pas par type de token. La répartition « Coût par type » et l'« Économie du cache » sont estimées avec des ratios de prix par fournisseur (`server/src/usage.ts`).
-- Les sessions servent seulement à compter l'activité ; une session est comptée sur chaque période où elle a été active.
+- ccusage reports one cost per model, not per token type. The "Cost by type" split and "Cache savings" are estimated from per-provider price ratios (`server/src/usage.ts`).
+- Sessions are only used to count activity; a session counts toward every period in which it was active.
 
-## Licence
+## License
 
 [MIT](LICENSE)
